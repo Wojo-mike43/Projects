@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#Paramerters#
+#Params#
 S0 = float(input("Curent Stock Price: "))
 k = int(input("Current Stike Price: "))
 sigma = float(input("Volatility (As Decimal): "))
@@ -12,7 +12,7 @@ n = int(input("Days to Expiration: "))
 r = float(input("Risk Free Rate of Return (As Decimal): "))
 T = 1
 
-#Time-Step#
+#time-step#
 dt  = T/n
 
 #Monte-Carlo Engine#
@@ -28,7 +28,7 @@ pv = results / (1 + np.exp(r * n/365))
 exp_pay = np.average(pv)
 print("Options Theoretical Price: " + str(round(exp_pay,2)))
 
-#Plot#
+#plot#
 plt.plot(final)
 plt.xlabel("Time Steps")
 plt.ylabel("Stock Price")

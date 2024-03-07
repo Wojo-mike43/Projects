@@ -1,0 +1,111 @@
+#Imports#
+import datetime as dt
+import yfinance as yf
+import pandas as pd
+from sklearn.svm import SVR
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import GridSearchCV
+from fredapi import Fred
+
+#Params#
+key = 'YOUR FRED API KEY HERE'
+stock = 'SPY'
+days = 100
+train_split = .95
+drop_list = ['Open', 'High', 'Low', 'Stock Splits', 'Capital Gains', 'Dividends', ('Volume', '^VIX'), ('Volume', '^TNX')]
+
+def data_pull(days,stock,key):
+    #Date#
+    end = dt.datetime.now()
+    start = end - dt.timedelta(days=days)
+    #YF Data#
+    tickers = yf.Tickers(str(stock) + ' ^VIX ^TNX')
+    df = tickers.history(start=start, end=end)
+    # fred data#
+    fred_client = Fred(api_key=key)
+    Fred_list = ['SOFR', 'BAMLC0A0CMEY', 'BAMLH0A0HYM2EY']
+    for series in Fred_list:
+        Fred_data = fred_client.get_series(series, start_date=start, end_date=end)
+        df[series] = Fred_data
+    return df
+
+def data_clean(df,drop_list):
+    df.drop(drop_list, inplace=True, axis=1)
+    df.fillna(df.mean(), inplace=True)
+    df['HPR ' +str(stock)] = df[('Close', str(stock))].pct_change()
+    df['HPR ^TNX'] = df[('Close', '^TNX')].pct_change()
+    df['HPR ^VIX'] = df[('Close', '^VIX')].pct_change()
+    df['HPR SOFR'] = df[('SOFR', '')].pct_change()
+    df = df.drop(df.index[0])
+    df = df.rename(columns={'BAMLC0A0CMEY': 'Corp', 'BAMLH0A0HYM2EY': 'HY'})
+    return df
+
+def ys_analysis(df):
+    corp = df['Corp']
+    hy = df['HY']
+    y_spread = []
+    for index, row in df.iterrows():
+        y_spread_day = hy[index] - corp[index]
+        y_spread.append(y_spread_day)
+    df['Junk Bonds Demand'] = y_spread
+    return df
+
+def save_haven_analysis(df,stock):
+    spy_close = df[('Close', str(stock))]
+    tnx_close = df[('Close', '^TNX')]
+    sfhd = []
+
+    for i in range(20,len(df)):
+        spy_20d_return = (spy_close.iloc[i -1] - spy_close.iloc[i -20]) / spy_close.iloc[i -20]
+        tnx_20d_return = (tnx_close.iloc[i -1] - tnx_close.iloc[i -20]) / tnx_close.iloc[i -20]
+        daily_sfhd = spy_20d_return - tnx_20d_return
+        sfhd.append(daily_sfhd)
+    outcomes = sfhd
+    df = df.drop(df.index[:20])
+    df['Safe Haven'] = outcomes
+    return df
+
+def split_shift(df,stock):
+    x = df.drop(['HPR SPY'], axis=1)
+    y = df['HPR SPY']
+    x_shift = x.shift(1)
+    x_shift = x_shift.dropna()
+    y_shift = y.loc[x_shift.index]
+    return x_shift, y_shift, x
+
+def train_test(x_shift,y_shift,x):
+    split_amount = int(len(x) * train_split)
+    xtrain = x_shift.iloc[:split_amount]
+    xtest = x_shift.iloc[split_amount:]
+    ytrain = y_shift.iloc[:split_amount].values.ravel()
+    ytest = y_shift.iloc[split_amount:].values.ravel()
+    return xtrain,xtest,ytrain,ytest
+
+def train_svr_model(xtrain,xtest,ytrain,ytest):
+    param_grid = {'svr__kernel': ('linear','rbf','poly'),'svr__C': [1,10,100], 'svr__epsilon': [.01,.1,1,5],'svr__degree': [2,3,4]}
+    pipe = Pipeline([('scaler', StandardScaler()), ('svr', SVR())])
+    grid_search = GridSearchCV(pipe,param_grid,cv=5,scoring='r2')
+    grid_search.fit(xtrain,ytrain)
+    print("Best parameters:", grid_search.best_params_)
+    model = grid_search.best_estimator_
+    return model
+
+def model_eval(xtest,ytest,svr_model):
+    prediction = svr_model.predict(xtest)
+    print('Prediction: ', prediction)
+    score = svr_model.score(xtest, ytest)
+    print('R2: ', score)
+    mse = mean_squared_error(ytest, prediction)
+    print('MSE: ', mse)
+
+#def main():
+df = data_pull(days,stock,key)
+df = data_clean(df,drop_list)
+df = ys_analysis(df)
+df = save_haven_analysis(df,stock)
+x_shift, y_shift, x = split_shift(df,stock)
+xtrain,xtest,ytrain,ytest = train_test(x_shift,y_shift,x)
+svr_model = train_svr_model(xtrain,xtest,ytrain,ytest)
+model_eval(xtest,ytest,svr_model)

@@ -1,0 +1,36 @@
+#Imports#
+import numpy as np
+import matplotlib.pyplot as plt
+
+#Paramerters#
+S0 = float(input("Curent Stock Price: "))
+k = int(input("Current Stike Price: "))
+sigma = float(input("Volatility (As Decimal): "))
+mu = float(input("Drift Coefficent (As Decimal): "))
+iter = int(input("Number of Itterations: "))
+n = int(input("Days to Expiration: "))
+r = float(input("Risk Free Rate of Return (As Decimal): "))
+T = 1
+
+#Time-Step#
+dt  = T/n
+
+#Monte-Carlo Engine#
+random_variables = np.exp(((mu - (sigma**2)/2)) * dt + sigma * np.random.normal(0, np.sqrt(dt),(n,iter)))
+ones = np.ones(iter)
+rand_1 = np.vstack((ones,random_variables))
+final = S0 * np.cumprod(rand_1,axis=0)
+
+#options pricing (European call)#
+St = final[n]
+results = np.maximum(St-k,0)
+pv = results / (1 + np.exp(r * n/365))
+exp_pay = np.average(pv)
+print("Options Theoretical Price: " + str(round(exp_pay,2)))
+
+#Plot#
+plt.plot(final)
+plt.xlabel("Time Steps")
+plt.ylabel("Stock Price")
+plt.title("Simulated Stock Prices")
+plt.show()
